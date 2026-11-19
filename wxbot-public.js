@@ -18,6 +18,9 @@ const CONFIG = {
   glm_model: 'glm-4-flash',
 };
 
+// Supabase 部署时可用环境变量 WXBOT_TOKEN 覆盖 token（公开代码仓库里只放占位符）
+try { const t = Deno.env.get('WXBOT_TOKEN'); if (t) CONFIG.token = t; } catch (e) {}
+
 // ---------------- 固定文案（与 wechat-bot/config.yaml 对齐） ----------------
 
 const FORTUNE_LINK = 'https://zhongyixuexi.rf.gd/qian.html';
