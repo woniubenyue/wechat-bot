@@ -20,6 +20,8 @@ const CONFIG = {
 
 // Supabase 部署时可用环境变量 WXBOT_TOKEN 覆盖 token（公开代码仓库里只放占位符）
 try { const t = Deno.env.get('WXBOT_TOKEN'); if (t) CONFIG.token = t; } catch (e) {}
+// 同理，GLM_API_KEY 走环境变量（密钥不进代码仓库）
+try { const k = Deno.env.get('GLM_API_KEY'); if (k) CONFIG.glm_api_key = k; } catch (e) {}
 
 // ---------------- 固定文案（与 wechat-bot/config.yaml 对齐） ----------------
 
