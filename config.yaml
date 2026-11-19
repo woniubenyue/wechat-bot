@@ -1,0 +1,111 @@
+# ============================================================
+# 蜗牛奔月微信群机器人 配置文件
+# 改完保存后重启 bot.py 生效。API Key 不写在这里，从环境变量读。
+# ============================================================
+
+# 传输层：gewechat（默认，Linux 云电脑 + Docker）/ wcferry（Windows 挂微信）
+# 环境变量 WECHAT_BOT_TRANSPORT 可覆盖这里
+transport: "gewechat"
+
+bot:
+  # 同一个人多少秒内最多回 1 次（防刷屏、防被微信限制）
+  rate_limit_seconds: 10
+  # 单条回复最大字数（问答截断用）
+  max_reply_chars: 500
+  # 运行时状态目录：统计库、owner.json、静默群、自定义词表、GeWeChat appId 都放这儿
+  # 留空 = 程序所在目录；InstaBox 部署建议指到不会被清理的持久目录
+  state_dir: ""
+
+# 群白名单：留空 [] = 所有群都生效；填了群 ID（xxx@chatroom）就只在这些群回消息
+# 私聊不受白名单影响。群 ID 可在 bot.py 日志里看（收到消息会打印 roomid）
+group_whitelist: []
+
+# 主人 wxid：主人专属指令（状态、闭嘴/开口、加词、禁点歌/解禁点歌、导出/重置统计）只认这个 wxid，
+# 不认昵称（昵称能改、能重名，wxid 才是唯一标识）。可留空，部署后用「认主」私聊绑定，
+# 绑定结果落在 state_dir/owner.json，优先级高于这里；两处都空 = 暂无主人。
+owner_wxid: ""
+
+# 认主一次性暗号：未绑定主人时，任何人私聊机器人发「认主 <暗号>」即成为主人，
+# 绑定后暗号作废、认主通道关闭。
+# ⚠️ 下面是占位符，部署时必须改成随机 6 位数字，且不要外传、不要截图发群里；
+# 保持占位符等于没设防——别人猜中就能抢注主人。
+bind_code: "000000"
+
+# ---------------- 点歌黑名单 ----------------
+# 静态名单：这些 wxid 点歌一律拒绝。与主人指令维护的运行时名单
+# （state_dir/blacklist.json 的 song 数组）合并生效；「解禁点歌」只能移除
+# 运行时名单，静态名单里的人要改这里并重启才彻底解禁。
+blacklist_song: []
+# 命中黑名单时的回复文案（blacklist_song_silent=true 时不用）
+blacklist_song_reply: "你被主人关小黑屋啦，点不了歌～"
+# true = 命中黑名单的人点歌时静默不回（连拒绝文案都不发）
+blacklist_song_silent: false
+
+# ---------------- GeWeChat 传输层 ----------------
+# 仅 transport=gewechat 时用。接口路径按同协议生态文档实现，原 GeWeChat 官方
+# 服务已下线，上线前按实际部署版本的文档再核对一遍（见 gewechat_transport.py 头注）。
+gewechat:
+  # GeWeChat API 地址（服务在本机 Docker 时保持默认）
+  base_url: "http://127.0.0.1:2531/v2/api"
+  # API token 从这个环境变量读，绝不写进文件
+  token_env: "GEWECHAT_TOKEN"
+  # 本机回调服务监听（GeWeChat 把新消息 POST 到这里）
+  callback_host: "0.0.0.0"
+  callback_port: 9911
+  callback_path: "/callback"
+  # 告诉 GeWeChat 的回调地址：留空 = http://127.0.0.1:<callback_port><callback_path>
+  # GeWeChat 在 Docker 里、bot 在宿主机时，127.0.0.1 指的是容器内部，必须改成
+  # 容器能访问到的宿主机地址（如 http://host.docker.internal:9911/callback）
+  callback_url: ""
+
+# ---------------- 大模型问答 ----------------
+# OpenAI 兼容接口，换豆包/Groq 只改 base_url + model + api_key_env 三处
+llm:
+  base_url: "https://open.bigmodel.cn/api/paas/v4"   # 智谱 GLM；豆包: https://ark.cn-beijing.volces.com/api/v3 ；Groq: https://api.groq.com/openai/v1
+  api_key_env: "GLM_API_KEY"                          # 从这个环境变量读 Key，绝不把真 Key 写进文件
+  model: "glm-4-flash"
+  max_tokens: 600
+  system_prompt: "你是微信群里的小助手「蜗牛奔月」，回答简短、口语、友好，不超过 300 字，不编造事实。"
+
+# ---------------- 点歌 ----------------
+music:
+  # 网易云音乐公开搜索接口（免 Key）。{keyword} 会被替换成搜索词
+  search_url: "https://music.163.com/api/search/get/web?csrf_token=&s={keyword}&type=1&offset=0&total=true&limit=5"
+  # 播放链接模板，{song_id} 替换成歌曲 ID
+  play_url: "https://music.163.com/song?id={song_id}"
+  # 音乐卡片需要一个公众号原始 ID（gh_ 开头）做卡片来源；留空或保持占位就只发文本链接兜底
+  card_account: ""
+  card_name: "网易云音乐"
+
+# ---------------- 天气 ----------------
+weather:
+  # wttr.in 免 Key 接口，{city} 替换成城市名
+  url: "https://wttr.in/{city}?format=j1&lang=zh"
+
+# ---------------- 关键词自动回复 ----------------
+# 消息里包含关键词就回对应内容（点歌/天气/抽签指令优先于关键词）
+keywords:
+  资源: "蜗牛奔月资源站：https://wnby.rf.gd/ 软件、教程、快捷指令都在这儿，自取～"
+  公众号: "关注公众号「蜗牛奔月」，AI 教程和资源更新都在那儿发，微信里搜「蜗牛奔月」就能找到～"
+  工具: "免费工具站（全本地运行、不上传数据）：https://woniubenyue.github.io/ 二维码、单位换算、日期计算、人民币大写都有。"
+  道观: "九九道观，进来坐坐：https://wnby.rf.gd/daoguan/ 里面还有《敲千山》和药田小游戏。"
+
+# ---------------- 入群欢迎 ----------------
+# {name} 会替换成新成员昵称，取不到时用「新朋友」
+welcome_template: "欢迎 {name} 加入本群！发「点歌 歌名」可以点歌，@我可以问问题，发「天气 城市」查天气，发「抽签」求今日一签～"
+
+# ---------------- 每日一签 ----------------
+fortune_link: "https://zhongyixuexi.rf.gd/qian.html"
+fortunes:
+  - "上上签 · 云开见月明：守得云开见月明，万事顺遂，好事将近。"
+  - "上签 · 贵人相助：心诚则灵，步步稳进，今日有贵人缘。"
+  - "上签 · 春风得意：春风得意马蹄疾，想做的事大胆往前走。"
+  - "中上签 · 静水流深：不争不抢，好运自来，稳住就是赢。"
+  - "上签 · 耕耘有获：一分耕耘一分收获，脚踏实地必有回响。"
+  - "中上签 · 笑口常开：笑口常开，好运自来，烦恼靠边站。"
+  - "上签 · 柳暗花明：山重水复疑无路，柳暗花明又一村，转机就在前面。"
+  - "上上签 · 家和万事兴：和气生财，家和万事兴，今日宜和和气气。"
+  - "上签 · 顺风顺水：顺风顺水顺人意，得福得安得自在。"
+  - "中上签 · 慢工细活：慢工出细活，稳扎稳打，终有所成。"
+  - "上签 · 好事在路上：今日宜开心，忌焦虑，好事正在路上。"
+  - "上上签 · 星光不负：星光不负赶路人，时光不负有心人，坚持就有回报。"

@@ -1,0 +1,5 @@
+# 微信群机器人依赖（GeWeChat 传输层，Linux）
+requests>=2.31
+PyYAML>=6.0
+# wcferry 仅在 Windows + wcferry 传输层时需要，Linux/GeWeChat 部署不要装：
+# pip install wcferry
