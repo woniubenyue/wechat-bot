@@ -15,9 +15,9 @@
 var CONFIG = {
     // 桥接服务地址：bridge.py 的 HTTPS 地址（cloudflared 隧道域名），不要带末尾 /
     // 本机同局域网调试可填 http://电脑IP:9920
-    BRIDGE_URL: "https://请改成你的隧道域名.trycloudflare.com",
+    BRIDGE_URL: "https://deals-dee-est-opened.trycloudflare.com",
     // 桥接服务鉴权口令：和服务器环境变量 BRIDGE_TOKEN 一致；服务器没设就留空
-    BRIDGE_TOKEN: "",
+    BRIDGE_TOKEN: "397f96846225ed213ec0bd12ef6b17ae",
     // 机器人在群里的昵称（小号的群昵称）：用来判断 @我、过滤自己发的消息
     BOT_NICKNAME: "请改成机器人小号昵称",
     // 群白名单：只处理这些群名的消息。留空 [] = 观察模式下先记录所有群，
