@@ -312,6 +312,35 @@ function musicFromSearchJson(json, query) {
   };
 }
 
+// 点歌没搜到时，让 GLM 俏皮接话（方言/玩笑/非歌名输入也能接住）；无 Key 或失败返回 null
+async function musicMissWitty(query, cfg = CONFIG) {
+  const key = String(cfg.glm_api_key ?? '').trim();
+  if (key === '') return null;
+  const base = String(cfg.glm_base_url ?? 'https://open.bigmodel.cn/api/paas/v4').replace(/\/+$/, '');
+  const payload = {
+    model: cfg.glm_model ?? 'glm-4-flash',
+    messages: [
+      { role: 'system', content: '你是公众号「蜗牛奔月」的小助手。粉丝发来「点歌 ' + query + '」，但歌库里没有这首歌，对方多半是拿方言、玩笑话或随口一说逗你玩。用一句俏皮话接住（不超过60字，像朋友聊天，别生硬，别自称AI），再顺势引导他发真正的歌名，最好带上歌手。只输出这一句回复。' },
+      { role: 'user', content: '点歌 ' + query },
+    ],
+    max_tokens: 120,
+  };
+  const body = await httpPostJson(base + '/chat/completions', payload, {
+    Authorization: 'Bearer ' + key,
+    'Content-Type': 'application/json',
+  }, 4);
+  if (body === null) return null;
+  try {
+    const data = JSON.parse(body);
+    let answer = String(data?.choices?.[0]?.message?.content ?? '').trim();
+    if (answer === '') return null;
+    if (charLen(answer) > 120) answer = charSub(answer, 0, 120);
+    return answer;
+  } catch (_) {
+    return null;
+  }
+}
+
 async function routeMusic(content) {
   if (!startsWith(content, '点歌')) return null;
   const query = charSub(content, 2).trim();
@@ -326,7 +355,11 @@ async function routeMusic(content) {
   }
   const music = musicFromSearchJson(body, query);
   if (music === null) {
-    return textResult('music', `没找到和「${query}」有关的歌，换个歌名、或者加上歌手再试试～`);
+    const witty = await musicMissWitty(query);
+    if (witty !== null) {
+      return textResult('music-miss', witty);
+    }
+    return textResult('music', `没找到和「${query}」有关的歌～你要是逗我玩，那算你成功啦；真想听歌，发个歌名带上歌手，比如「点歌 晴天 周杰伦」，我马上放给你。`);
   }
   return { kind: 'music', route: 'music', music };
 }
