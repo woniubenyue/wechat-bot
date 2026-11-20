@@ -180,6 +180,19 @@ async function httpPostJson(url, payload, headers = {}, timeoutSec = 4) {
   }
 }
 
+async function httpPostForm(url, formObj, headers = {}, timeoutSec = 3) {
+  try {
+    const res = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...headers },
+      body: new URLSearchParams(formObj).toString(),
+    }, timeoutSec * 1000);
+    return await res.text();
+  } catch (_) {
+    return null;
+  }
+}
+
 // ---------------- 签名验证 ----------------
 
 async function sha1Hex(text) {
@@ -284,9 +297,64 @@ function routeRules(content, rules = RULES) {
   return null;
 }
 
-// ---------------- 2. 点歌（网易云公开搜索 → 音乐消息） ----------------
+// ---------------- 2. 点歌（网易云 weapi 加密搜索 → 音乐消息） ----------------
+// 旧版 api/search/get/web 接口已改为加密响应、解析不到歌单（2026-11-20 实测坐实），
+// 改走网页端同款 weapi：两次 AES-CBC + RSA 生成 params/encSecKey，响应仍是明文 JSON。
+
+const WEAPI_MODULUS = '00e0b509f6259df8642dbc35662901477df22677ec152b5ff68ace615bb7b725152b3ab17a876aea8a5aa76d2e417629ec4ee341f56135fccf695280104e0312ecbda92557c93870114af6c9d05c4f7f0c3685b7a46bee255932575cce10b424d813cfe4875d3e82047b97ddef52741d546b8e289dc6935b3ece0462db0a22b8e7';
+const WEAPI_PRESET_KEY = '0CoJUm6Qyw8W8jud';
+const WEAPI_IV = '0102030405060708';
+const WEAPI_BASE62 = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+
+function bytesToBase64(bytes) {
+  let bin = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
+}
+
+async function weapiAesEncrypt(text, key) {
+  const k = await crypto.subtle.importKey('raw', textEncoder.encode(key), { name: 'AES-CBC' }, false, ['encrypt']);
+  const ct = await crypto.subtle.encrypt({ name: 'AES-CBC', iv: textEncoder.encode(WEAPI_IV) }, k, textEncoder.encode(text));
+  return bytesToBase64(new Uint8Array(ct));
+}
+
+function weapiRsaEncrypt(text) {
+  const reversed = text.split('').reverse().join('');
+  let hex = '';
+  for (const ch of reversed) hex += ch.charCodeAt(0).toString(16).padStart(2, '0');
+  const m = BigInt('0x' + hex);
+  const e = BigInt('0x010001');
+  const n = BigInt('0x' + WEAPI_MODULUS);
+  let result = 1n;
+  let base = m % n;
+  let exp = e;
+  while (exp > 0n) {
+    if (exp & 1n) result = (result * base) % n;
+    base = (base * base) % n;
+    exp >>= 1n;
+  }
+  return result.toString(16).padStart(256, '0');
+}
+
+// 搜索成功返回响应体文本（与旧接口同构的 JSON），失败返回 null
+async function weapiSearchBody(query) {
+  try {
+    let secretKey = '';
+    for (let i = 0; i < 16; i++) secretKey += WEAPI_BASE62[Math.floor(Math.random() * 62)];
+    const text = JSON.stringify({ s: query, type: 1, offset: 0, total: true, limit: 5, csrf_token: '' });
+    const params = await weapiAesEncrypt(await weapiAesEncrypt(text, WEAPI_PRESET_KEY), secretKey);
+    const encSecKey = weapiRsaEncrypt(secretKey);
+    return await httpPostForm('https://music.163.com/weapi/search/get?csrf_token=', { params, encSecKey }, { Referer: 'https://music.163.com/' }, 3);
+  } catch (_) {
+    return null;
+  }
+}
 
 // 把网易云搜索返回的 JSON 转成音乐消息数据；无结果/坏数据返回 null
+// 多个结果时按「歌名/歌手与查询词的吻合度」挑最像原唱的一首，避免选到翻唱
 function musicFromSearchJson(json, query) {
   let data;
   try {
@@ -296,7 +364,23 @@ function musicFromSearchJson(json, query) {
   }
   const songs = data?.result?.songs ?? [];
   if (!songs || songs.length === 0) return null;
-  const song = songs[0];
+  const parts = String(query ?? '').split(/\s+/).filter(Boolean);
+  let song = songs[0];
+  let bestScore = -1;
+  for (const s of songs) {
+    const name = s?.name ?? '';
+    const artistNames = (Array.isArray(s?.artists) ? s.artists : []).map((a) => a?.name ?? '');
+    let score = 0;
+    for (const p of parts) {
+      if (name === p) score += 3;
+      else if (name.includes(p)) score += 2;
+      if (artistNames.some((a) => a !== '' && (a.includes(p) || p.includes(a)))) score += 2;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      song = s;
+    }
+  }
   const name = song.name ?? query;
   const artists = [];
   for (const a of (Array.isArray(song.artists) ? song.artists : [])) {
@@ -328,7 +412,7 @@ async function musicMissWitty(query, cfg = CONFIG) {
   const body = await httpPostJson(base + '/chat/completions', payload, {
     Authorization: 'Bearer ' + key,
     'Content-Type': 'application/json',
-  }, 4);
+  }, 2.5);
   if (body === null) return null;
   try {
     const data = JSON.parse(body);
@@ -347,9 +431,7 @@ async function routeMusic(content) {
   if (query === '') {
     return textResult('music', '想听哪首？发「点歌 歌名」或「点歌 歌名 歌手」，比如：点歌 晴天 周杰伦');
   }
-  const url = 'https://music.163.com/api/search/get/web?csrf_token=&s=' + phpUrlencode(query)
-    + '&type=1&offset=0&total=true&limit=5';
-  const body = await httpGet(url, 3, { Referer: 'https://music.163.com/' });
+  const body = await weapiSearchBody(query);
   if (body === null) {
     return textResult('music', '点歌服务暂时打了个盹，稍后再试试～');
   }
